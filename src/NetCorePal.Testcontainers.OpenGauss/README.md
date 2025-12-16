@@ -1,7 +1,7 @@
 # NetCorePal.Testcontainers.OpenGauss
 
-[![Release Build](https://img.shields.io/github/actions/workflow/status/OWNER/REPO/release.yml?label=release%20build)](https://github.com/OWNER/REPO/actions/workflows/release.yml)
-[![Preview Build](https://img.shields.io/github/actions/workflow/status/OWNER/REPO/dotnet.yml?label=preview%20build)](https://github.com/OWNER/REPO/actions/workflows/dotnet.yml)
+[![Release Build](https://img.shields.io/github/actions/workflow/status/netcorepal/netcorepal-testcontainers/release.yml?label=release%20build)](https://github.com/netcorepal/netcorepal-testcontainers/actions/workflows/release.yml)
+[![Preview Build](https://img.shields.io/github/actions/workflow/status/netcorepal/netcorepal-testcontainers/dotnet.yml?label=preview%20build)](https://github.com/netcorepal/netcorepal-testcontainers/actions/workflows/dotnet.yml)
 
 > 包名：`NetCorePal.Testcontainers.OpenGauss`
 >
@@ -32,8 +32,8 @@ var connectionString = container.GetConnectionString();
 
 ## Docker 集成测试
 
-默认不会启动 Docker 容器。
+默认会运行 Docker 集成测试。
 
-- 运行：`RUN_DOCKER_TESTS=1 dotnet test`
+- 跳过：`SKIP_DOCKER_TESTS=1 dotnet test` 或 `RUN_DOCKER_TESTS=0 dotnet test`
 
 说明：OpenGauss 可能启动较慢，建议在业务测试中增加“连接重试/探活”（本仓库测试中使用 `WaitForDatabaseReadyAsync`）。
