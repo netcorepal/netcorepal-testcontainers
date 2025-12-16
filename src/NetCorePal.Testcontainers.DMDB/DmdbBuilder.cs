@@ -4,7 +4,6 @@ using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using Docker.DotNet.Models;
-using Dm;
 
 namespace Testcontainers.DMDB;
 
@@ -132,36 +131,35 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
     {
         private readonly DmdbConfiguration _configuration;
 
+        private readonly IList<string> _command;
+
         public WaitUntil(DmdbConfiguration configuration)
         {
             _configuration = configuration;
+
+            var password = EscapeBashSingleQuotes(configuration.Password ?? string.Empty);
+            var dbaPassword = EscapeBashSingleQuotes(configuration.DbaPassword ?? string.Empty);
+
+            // Use bash to keep the invocation simple and allow quoting.
+            _command = new List<string>
+            {
+                "bash",
+                "-lc",
+                // Always probe using the default user/database. Custom username/database can be provisioned after the container has started.
+                // Prefer local in-container probing to avoid host networking edge-cases during startup.
+                $"/opt/dmdbms/bin/disql '{DefaultUsername}'/'{password}'@127.0.0.1:{DmdbPort} -e \"SELECT 1;\" >/dev/null 2>&1 || /opt/dmdbms/bin/disql '{DefaultUsername}'/'{password}'@127.0.0.1:{DmdbPort} -e \"SELECT 1\" >/dev/null 2>&1 || /opt/dmdbms/bin/disql sysdba/'{dbaPassword}'@127.0.0.1:{DmdbPort} -e \"SELECT 1;\" >/dev/null 2>&1"
+            };
+        }
+
+        private static string EscapeBashSingleQuotes(string value)
+        {
+            return value.Replace("'", "'\"'\"'");
         }
 
         public async Task<bool> UntilAsync(IContainer container)
         {
-            try
-            {
-                var username = _configuration.Username ?? DefaultUsername;
-                var password = _configuration.Password ?? DefaultPassword;
-                var dbaPassword = _configuration.DbaPassword ?? DefaultDbaPassword;
-                var port = container.GetMappedPublicPort(DmdbPort);
-                
-                // Build connection string manually to match the format in the reference implementation
-                var connectionString = $"Host={container.Hostname};Port={port};Username={username};Password={password};DBAPassword={dbaPassword};Timeout=5;";
-
-                await using var connection = new DmConnection(connectionString);
-                await connection.OpenAsync().ConfigureAwait(false);
-
-                await using var command = connection.CreateCommand();
-                command.CommandText = "SELECT 1";
-                _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            var execResult = await container.ExecAsync(_command).ConfigureAwait(false);
+            return 0L.Equals(execResult.ExitCode);
         }
     }
 }
