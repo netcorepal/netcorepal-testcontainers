@@ -14,6 +14,7 @@
 | 包名 | Release版本 | Preview版本 |
 | --- | --- | --- |
 | [NetCorePal.Testcontainers.OpenGauss](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss)（[文档](./src/NetCorePal.Testcontainers.OpenGauss/README.md)） | [![NuGet](https://img.shields.io/nuget/v/NetCorePal.Testcontainers.OpenGauss.svg)](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss) | [![NuGet Version](https://img.shields.io/nuget/vpre/NetCorePal.Testcontainers.OpenGauss?label=nuget-pre)](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss) |
+| [NetCorePal.Testcontainers.DMDB](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB)（[文档](./src/NetCorePal.Testcontainers.DMDB/README.md)） | [![NuGet](https://img.shields.io/nuget/v/NetCorePal.Testcontainers.DMDB.svg)](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB) | [![NuGet Version](https://img.shields.io/nuget/vpre/NetCorePal.Testcontainers.DMDB?label=nuget-pre)](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB) |
 
 ## 预览版源
 
