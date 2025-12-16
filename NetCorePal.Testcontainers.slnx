@@ -6,10 +6,12 @@
   </Configurations>
   <Folder Name="/src/">
     <Project Path="src/NetCorePal.Testcontainers.DMDB/NetCorePal.Testcontainers.DMDB.csproj" />
+    <Project Path="src/NetCorePal.Testcontainers.KingbaseES/NetCorePal.Testcontainers.KingbaseES.csproj" />
     <Project Path="src/NetCorePal.Testcontainers.OpenGauss/NetCorePal.Testcontainers.OpenGauss.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/NetCorePal.Testcontainers.DMDB.UnitTests/NetCorePal.Testcontainers.DMDB.UnitTests.csproj" />
+    <Project Path="test/NetCorePal.Testcontainers.KingbaseES.UnitTests/NetCorePal.Testcontainers.KingbaseES.UnitTests.csproj" />
     <Project Path="test/NetCorePal.Testcontainers.OpenGauss.UnitTests/NetCorePal.Testcontainers.OpenGauss.UnitTests.csproj" />
   </Folder>
 </Solution>
