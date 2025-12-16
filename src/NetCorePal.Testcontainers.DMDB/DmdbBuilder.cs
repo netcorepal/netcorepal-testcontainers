@@ -4,6 +4,7 @@ using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using Docker.DotNet.Models;
+using Dm;
 
 namespace Testcontainers.DMDB;
 
@@ -76,7 +77,10 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
             ? this
             : WithWaitStrategy(
                 Wait.ForUnixContainer()
-                    .UntilInternalTcpPortIsAvailable(DmdbPort));
+                    .UntilInternalTcpPortIsAvailable(DmdbPort)
+                    .AddCustomWaitStrategy(
+                        new WaitUntil(DockerResourceConfiguration),
+                        waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(2))));
 
         return new DmdbContainer(dmdbBuilder.DockerResourceConfiguration);
     }
@@ -122,5 +126,42 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
     protected override DmdbBuilder Merge(DmdbConfiguration oldValue, DmdbConfiguration newValue)
     {
         return new DmdbBuilder(new DmdbConfiguration(oldValue, newValue));
+    }
+
+    private sealed class WaitUntil : IWaitUntil
+    {
+        private readonly DmdbConfiguration _configuration;
+
+        public WaitUntil(DmdbConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public async Task<bool> UntilAsync(IContainer container)
+        {
+            try
+            {
+                var username = _configuration.Username ?? DefaultUsername;
+                var password = _configuration.Password ?? DefaultPassword;
+                var dbaPassword = _configuration.DbaPassword ?? DefaultDbaPassword;
+                var port = container.GetMappedPublicPort(DmdbPort);
+                
+                // Build connection string manually to match the format in the reference implementation
+                var connectionString = $"Host={container.Hostname};Port={port};Username={username};Password={password};DBAPassword={dbaPassword};Timeout=5;";
+
+                await using var connection = new DmConnection(connectionString);
+                await connection.OpenAsync().ConfigureAwait(false);
+
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT 1";
+                _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

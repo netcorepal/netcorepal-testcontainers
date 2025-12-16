@@ -81,6 +81,14 @@ public class MyDatabaseTests : IAsyncLifetime
 - **DBA密码**: SYSDBA_abc123
 - **特权模式**: true
 
+## 等待策略
+
+容器启动时会自动等待数据库完全就绪：
+- 首先等待 TCP 端口 5236 可用
+- 然后使用 [DM.DmProvider](https://www.nuget.org/packages/DM.DmProvider) 验证数据库连接
+- 执行 `SELECT 1` 查询确保数据库可以接受连接
+- 默认超时时间为 2 分钟
+
 ## 注意事项
 
 - 达梦数据库的密码有格式要求，建议使用包含大小写字母和数字的密码
