@@ -205,7 +205,6 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                 // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
             }
 
-            // First, check if database is already running (fast path for retries)
             var statusCheckCommand = new List<string>
             {
                 "bash",
@@ -213,13 +212,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                 "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
             };
 
-            var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-            if (0L.Equals(statusResult.ExitCode))
-            {
-                return true; // Database is already running
-            }
-
-            // If not running and we haven't executed the entrypoint yet, execute it once
+            // If we haven't executed the entrypoint yet, execute it now
+            // This ensures the database is properly initialized on first check.
             if (!_entrypointExecuted)
             {
                 var entrypointCommand = new List<string>
@@ -242,7 +236,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                 for (int i = 0; i < 6; i++)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-                    statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+                    var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
                     if (0L.Equals(statusResult.ExitCode))
                     {
                         return true;
@@ -251,7 +245,13 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             }
             else
             {
-                // On subsequent retries, wait a bit before checking again
+                // On subsequent retries, just check the status and wait a bit
+                var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+                if (0L.Equals(statusResult.ExitCode))
+                {
+                    return true;
+                }
+
                 _retryCount++;
                 if (_retryCount <= 10)
                 {
@@ -260,8 +260,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             }
 
             // Final check if database is running now
-            statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-            return 0L.Equals(statusResult.ExitCode);
+            var finalStatusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+            return 0L.Equals(finalStatusResult.ExitCode);
         }
     }
 
@@ -269,6 +269,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     {
         private readonly string _username;
         private readonly string _password;
+        private int _retryCount = 0;
 
         public WaitUntilSqlReady(string username, string password)
         {
@@ -306,7 +307,22 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             };
 
             var result = await container.ExecAsync(command).ConfigureAwait(false);
-            return 0L.Equals(result.ExitCode);
+            if (0L.Equals(result.ExitCode))
+            {
+                // Reset retry count on success
+                _retryCount = 0;
+                return true;
+            }
+
+            // Add a small delay before retrying to avoid hammering the container
+            // This is especially important in early initialization stages
+            _retryCount++;
+            if (_retryCount < 3)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            }
+
+            return false;
         }
     }
 }
