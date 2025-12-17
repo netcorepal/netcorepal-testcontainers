@@ -184,6 +184,27 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
         public async Task<bool> UntilAsync(IContainer container)
         {
+            // Ensure sshd is available before running the image's entrypoint.
+            // The script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
+            // On some Linux/amd64 environments, sshd is not started by default under systemd-without-dbus.
+            // We proactively generate host keys and start sshd in background to unblock initialization.
+            var prepareSshCommand = new List<string>
+            {
+                "bash",
+                "-lc",
+                // If sshd is not running, generate host keys (idempotent) and start sshd.
+                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }"
+            };
+
+            try
+            {
+                _ = await container.ExecAsync(prepareSshCommand).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
+            }
+
             // First, check if database is already running (fast path for retries)
             var statusCheckCommand = new List<string>
             {
