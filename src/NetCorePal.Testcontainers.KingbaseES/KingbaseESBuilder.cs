@@ -78,14 +78,17 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     {
         Validate();
 
-        // By default, the base builder waits until the container is running. For KingbaseES, a more advanced waiting strategy is necessary.
-        // If the user does not provide a custom waiting strategy, append the default KingbaseES waiting strategy.
+        // By default, the base builder waits until the container is running.
+        // This image uses systemd as entrypoint and does NOT automatically start the database;
+        // therefore the default wait strategy must trigger the image-provided initialization script first.
         var kingbaseESBuilder = DockerResourceConfiguration.WaitStrategies.Count() > 1
             ? this
             : WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilInternalTcpPortIsAvailable(KingbaseESPort)
-                    .UntilMessageIsLogged("database system is ready to accept connections"));
+                    .AddCustomWaitStrategy(
+                        new WaitUntil(),
+                        waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(10))));
 
         return new KingbaseESContainer(kingbaseESBuilder.DockerResourceConfiguration);
     }
@@ -153,5 +156,23 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     private static string Base64Encode(string value)
     {
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+    }
+
+    private sealed class WaitUntil : IWaitUntil
+    {
+        private static readonly IList<string> Command = new List<string>
+        {
+            "bash",
+            "-lc",
+            // Trigger the image-provided initialization/start logic.
+            // Then probe sys_ctl as the `kingbase` user (sys_ctl refuses to run as root).
+            "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+        };
+
+        public async Task<bool> UntilAsync(IContainer container)
+        {
+            var execResult = await container.ExecAsync(Command).ConfigureAwait(false);
+            return 0L.Equals(execResult.ExitCode);
+        }
     }
 }
