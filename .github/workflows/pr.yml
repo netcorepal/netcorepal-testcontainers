@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -13,13 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - dotnet-version: '8.0.x'
-            framework: 'net8.0'
-          - dotnet-version: '9.0.x'
-            framework: 'net9.0'
-          - dotnet-version: '10.0.x'
-            framework: 'net10.0'
+        framework: [ 'net8.0', 'net9.0', 'net10.0' ]
+        package: [ 'DMDB', 'KingbaseES', 'OpenGauss' ]
+
+    name: Test (${{ matrix.package }} / ${{ matrix.framework }})
 
     steps:
       - uses: actions/checkout@v4
@@ -27,14 +24,14 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ matrix.dotnet-version }}
+          dotnet-version: ${{ matrix.framework == 'net8.0' && '8.0.x' || matrix.framework == 'net9.0' && '9.0.x' || '10.0.x' }}
           include-prerelease: true
 
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Build
-        run: dotnet build -c Release -f ${{ matrix.framework }} --no-restore
+        run: dotnet build -c Release -f ${{ matrix.framework }} ${{ format('test/NetCorePal.Testcontainers.{0}.UnitTests/NetCorePal.Testcontainers.{0}.UnitTests.csproj', matrix.package) }} --no-restore
 
       - name: Test
-        run: dotnet test -c Release -f ${{ matrix.framework }} --no-build --verbosity normal --logger "console;verbosity=detailed"
+        run: dotnet test -c Release -f ${{ matrix.framework }} ${{ format('test/NetCorePal.Testcontainers.{0}.UnitTests/NetCorePal.Testcontainers.{0}.UnitTests.csproj', matrix.package) }} --no-build --verbosity normal --logger "console;verbosity=detailed"
