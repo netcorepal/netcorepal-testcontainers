@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <RootNamespace>Testcontainers.DMDB.UnitTests</RootNamespace>
+    <RootNamespace>Testcontainers.KingbaseES.UnitTests</RootNamespace>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -17,6 +17,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="DotNetCore.EntityFrameworkCore.KingbaseES" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,7 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\NetCorePal.Testcontainers.DMDB\NetCorePal.Testcontainers.DMDB.csproj" />
+    <ProjectReference Include="..\..\src\NetCorePal.Testcontainers.KingbaseES\NetCorePal.Testcontainers.KingbaseES.csproj" />
   </ItemGroup>
 
 </Project>

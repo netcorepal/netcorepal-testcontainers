@@ -15,6 +15,39 @@
 | --- | --- | --- |
 | [NetCorePal.Testcontainers.OpenGauss](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss)（[文档](./src/NetCorePal.Testcontainers.OpenGauss/README.md)） | [![NuGet](https://img.shields.io/nuget/v/NetCorePal.Testcontainers.OpenGauss.svg)](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss) | [![NuGet Version](https://img.shields.io/nuget/vpre/NetCorePal.Testcontainers.OpenGauss?label=nuget-pre)](https://www.nuget.org/packages/NetCorePal.Testcontainers.OpenGauss) |
 | [NetCorePal.Testcontainers.DMDB](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB)（[文档](./src/NetCorePal.Testcontainers.DMDB/README.md)） | [![NuGet](https://img.shields.io/nuget/v/NetCorePal.Testcontainers.DMDB.svg)](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB) | [![NuGet Version](https://img.shields.io/nuget/vpre/NetCorePal.Testcontainers.DMDB?label=nuget-pre)](https://www.nuget.org/packages/NetCorePal.Testcontainers.DMDB) |
+| [NetCorePal.Testcontainers.KingbaseES](https://www.nuget.org/packages/NetCorePal.Testcontainers.KingbaseES)（[文档](./src/NetCorePal.Testcontainers.KingbaseES/README.md)） | [![NuGet](https://img.shields.io/nuget/v/NetCorePal.Testcontainers.KingbaseES.svg)](https://www.nuget.org/packages/NetCorePal.Testcontainers.KingbaseES) | [![NuGet Version](https://img.shields.io/nuget/vpre/NetCorePal.Testcontainers.KingbaseES?label=nuget-pre)](https://www.nuget.org/packages/NetCorePal.Testcontainers.KingbaseES) |
+
+## 本机快速验证
+
+前置要求：已安装 .NET SDK；如需运行 Docker 集成测试，请先安装并启动 Docker（Docker Desktop / Linux Docker）。
+
+### Windows（PowerShell）
+
+```powershell
+dotnet restore
+dotnet build -c Release
+
+# 运行全部测试（需要 Docker）
+dotnet test -c Release
+
+# 仅运行非 Docker 测试（跳过所有 [DockerFact]）
+$env:SKIP_DOCKER_TESTS = "1"
+dotnet test -c Release
+Remove-Item Env:SKIP_DOCKER_TESTS
+```
+
+### macOS / Linux（bash）
+
+```bash
+dotnet restore
+dotnet build -c Release
+
+# 运行全部测试（需要 Docker）
+dotnet test -c Release
+
+# 仅运行非 Docker 测试（跳过所有 [DockerFact]）
+SKIP_DOCKER_TESTS=1 dotnet test -c Release
+```
 
 ## 预览版源
 

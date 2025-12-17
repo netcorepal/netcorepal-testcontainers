@@ -5,9 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <PackageId>NetCorePal.Testcontainers.OpenGauss</PackageId>
-    <AssemblyName>NetCorePal.Testcontainers.OpenGauss</AssemblyName>
-    <RootNamespace>Testcontainers.OpenGauss</RootNamespace>
+    <PackageId>NetCorePal.Testcontainers.KingbaseES</PackageId>
+    <AssemblyName>NetCorePal.Testcontainers.KingbaseES</AssemblyName>
+    <RootNamespace>Testcontainers.KingbaseES</RootNamespace>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
