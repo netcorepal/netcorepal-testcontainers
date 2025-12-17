@@ -179,32 +179,45 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     private sealed class WaitUntilStarted : IWaitUntil
     {
-        private static readonly IList<string> Command = new List<string>
-        {
-            "bash",
-            "-lc",
-            // The image's systemd entrypoint does NOT guarantee DB is started when the container is "running".
-            // We need to trigger docker-entrypoint.sh (install/init/start) and wait until sys_ctl reports the DB is running.
-            // Keep the check idempotent and retryable:
-            // - If sys_ctl exists and the DB is running, succeed fast.
-            // - Otherwise, run docker-entrypoint.sh once (guarded by a simple lock) and then re-check.
-            // - Only mark success when sys_ctl status succeeds.
-            "DATA_DIR=/home/kingbase/cluster/data; SYS_CTL=/home/kingbase/cluster/bin/sys_ctl; ENTRYPOINT=/home/kingbase/cluster/bin/docker-entrypoint.sh; "
-            + "MARKER=/home/kingbase/.testcontainers-kingbasees.started; LOCKDIR=/tmp/testcontainers-kingbasees-entrypoint.lock; "
-            + "if [ -x \"$SYS_CTL\" ] && runuser -u kingbase -- \"$SYS_CTL\" status -D \"$DATA_DIR\" >/dev/null 2>&1; then touch \"$MARKER\"; exit 0; fi; "
-            + "if [ ! -f \"$MARKER\" ]; then "
-            + "  if mkdir \"$LOCKDIR\" >/dev/null 2>&1; then "
-            + "    ( HOSTNAME=$(hostname) \"$ENTRYPOINT\" >/tmp/testcontainers-kingbasees-entrypoint.out 2>&1 || true ); "
-            + "    rmdir \"$LOCKDIR\" >/dev/null 2>&1 || true; "
-            + "  fi; "
-            + "fi; "
-            + "[ -x \"$SYS_CTL\" ] && runuser -u kingbase -- \"$SYS_CTL\" status -D \"$DATA_DIR\" >/dev/null 2>&1 && touch \"$MARKER\""
-        };
+        private bool _entrypointExecuted = false;
 
         public async Task<bool> UntilAsync(IContainer container)
         {
-            var execResult = await container.ExecAsync(Command).ConfigureAwait(false);
-            return 0L.Equals(execResult.ExitCode);
+            // First, check if database is already running (fast path for retries)
+            var statusCheckCommand = new List<string>
+            {
+                "bash",
+                "-c",
+                "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+            };
+
+            var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+            if (0L.Equals(statusResult.ExitCode))
+            {
+                return true; // Database is already running
+            }
+
+            // If not running and we haven't executed the entrypoint yet, execute it once
+            if (!_entrypointExecuted)
+            {
+                var entrypointCommand = new List<string>
+                {
+                    "bash",
+                    "-c",
+                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1"
+                };
+
+                // Execute entrypoint and wait for it to complete (this may take several minutes)
+                await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
+                _entrypointExecuted = true;
+
+                // Give the database a moment to start after entrypoint completes
+                await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+
+            // Check if database is running now
+            statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+            return 0L.Equals(statusResult.ExitCode);
         }
     }
 
