@@ -146,24 +146,24 @@ public abstract class KingbaseESContainerTest
         {
             private static readonly IList<string> PrepareSshCommand = new List<string>
             {
-                "bash",
+                "sh",
                 "-lc",
                 // Ensure sshd is available before running the image's entrypoint.
                 // The entrypoint script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
-                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }"
+                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
             };
 
             private static readonly IList<string> StatusCheckCommand = new List<string>
             {
-                "bash",
-                "-c",
+                "sh",
+                "-lc",
                 "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
             };
 
             private static readonly IList<string> EntrypointCommand = new List<string>
             {
-                "bash",
-                "-c",
+                "sh",
+                "-lc",
                 "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
             };
 
