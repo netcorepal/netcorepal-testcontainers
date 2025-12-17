@@ -58,6 +58,66 @@ var connectionString = kingbaseESContainer.GetConnectionString();
 
 注意：如果你自行覆盖 `WithWaitStrategy(...)`，请确保你的等待策略仍会触发上述脚本（或以其它方式启动数据库），否则可能出现“容器已运行但端口永远不开放”的卡死情况。
 
+## 本机快速验证命令（推荐）
+
+下面是一组可直接在 macOS（Docker Desktop）/Linux 上执行的命令，用于验证该镜像的启动机制：容器默认只启动 systemd，必须执行 `docker-entrypoint.sh` 才会安装并启动数据库。
+
+```bash
+docker pull apecloud/kingbase:v008r006c009b0014-unit
+
+KB_NAME=kb_local
+KB_PASS='12345678ab'
+KB_PASS_B64="$(printf %s "$KB_PASS" | base64)"
+HOST_PORT=15432
+
+# 1) 默认方式启动容器（此时 DB 通常还未启动）
+docker run -d --rm --name "$KB_NAME" --privileged --hostname kingbase-0 \
+    -p "$HOST_PORT:54321" \
+    apecloud/kingbase:v008r006c009b0014-unit
+
+# 2) 观察 PID1 与是否存在 DB/端口
+docker exec "$KB_NAME" sh -lc '
+    echo "PID1:"; ps -p 1 -o pid,comm,args;
+    echo;
+    echo "DB processes:";
+    ps -ef | grep -E "(kingbase|repmgrd|kbha)" | grep -v grep || true;
+    echo;
+    echo "Listen:";
+    (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null || true) | head -n 50
+'
+
+# 3) 触发镜像内置初始化/启动脚本（会解压生成 sys_ctl/ksql 并启动 DB）
+docker exec \
+    -e ALL_NODE_IP=localhost \
+    -e REPLICA_COUNT=1 \
+    -e TRUST_IP=127.0.0.1 \
+    -e DB_PASSWORD="$KB_PASS_B64" \
+    "$KB_NAME" sh -lc '
+        HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh > /tmp/entrypoint.out 2>&1;
+        echo "exit=$?";
+        tail -n 60 /tmp/entrypoint.out
+    '
+
+# 4) 再次确认 DB 进程与监听端口
+docker exec "$KB_NAME" sh -lc '
+    ps -eo pid,user,comm,args | grep -E "(kingbase(d)?|repmgrd|kbha)" | grep -v grep | head -n 50;
+    echo;
+    (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null || true) | grep 54321 || true
+'
+
+# 5) 使用容器内 ksql 探活（SELECT 1）
+docker exec "$KB_NAME" sh -lc '
+    printf "%s\\n" "127.0.0.1:54321:*:system:'"$KB_PASS"'" > /home/kingbase/.pgpass \
+    && chown kingbase:kingbase /home/kingbase/.pgpass \
+    && chmod 600 /home/kingbase/.pgpass \
+    && runuser -u kingbase -- env PGPASSFILE=/home/kingbase/.pgpass \
+         /home/kingbase/cluster/bin/ksql -w -h 127.0.0.1 -p 54321 -U system -d test -t -A -c "SELECT 1;"
+'
+
+# 6) 清理
+docker rm -f "$KB_NAME"
+```
+
 ## 默认配置
 
 - **镜像**: `apecloud/kingbase:v008r006c009b0014-unit`
