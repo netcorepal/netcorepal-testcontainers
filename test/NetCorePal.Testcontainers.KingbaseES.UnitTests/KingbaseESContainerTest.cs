@@ -17,7 +17,7 @@ public abstract class KingbaseESContainerTest
     }
 
     [DockerFact]
-    public void ConnectionStringContainsExpectedProperties()
+    public async Task ConnectionStringContainsExpectedProperties()
     {
         var connectionString = _fixture.GetConnectionString();
         
@@ -27,6 +27,46 @@ public abstract class KingbaseESContainerTest
         Assert.Contains("Username=", connectionString);
         Assert.Contains("Password=", connectionString);
         Assert.Contains("Timeout=", connectionString);
+
+        await VerifyKingbaseEsIsReachableAsync(connectionString);
+    }
+
+    private static async Task VerifyKingbaseEsIsReachableAsync(string connectionString)
+    {
+        await using var dbContext = new ProbeDbContext(connectionString);
+
+        var canConnect = await dbContext.Database.CanConnectAsync();
+        if (!canConnect)
+        {
+            throw new InvalidOperationException("Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
+        }
+
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1";
+        var result = await command.ExecuteScalarAsync();
+        if (result is null || Convert.ToInt32(result) != 1)
+        {
+            throw new InvalidOperationException("Connected to KingbaseES but 'SELECT 1' did not return 1.");
+        }
+    }
+
+    private sealed class ProbeDbContext : DbContext
+    {
+        private readonly string _connectionString;
+
+        public ProbeDbContext(string connectionString)
+        {
+            _connectionString = connectionString;
+        }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+            => optionsBuilder.UseKdbndp(_connectionString);
     }
 
     public class KingbaseESDefaultFixture : IAsyncLifetime
@@ -102,66 +142,60 @@ public abstract class KingbaseESContainerTest
                     waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(5))));
         }
 
-        public override async Task InitializeAsync()
-        {
-            await base.InitializeAsync();
-
-            if (Container is null)
-            {
-                return;
-            }
-
-            // Validate the DB is actually reachable via the EF Core provider.
-            await using var dbContext = new ProbeDbContext(Container.GetConnectionString());
-            var canConnect = await dbContext.Database.CanConnectAsync();
-            if (!canConnect)
-            {
-                throw new InvalidOperationException("Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
-            }
-
-            var connection = dbContext.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-            {
-                await connection.OpenAsync();
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT 1";
-            var result = await command.ExecuteScalarAsync();
-            if (result is null || Convert.ToInt32(result) != 1)
-            {
-                throw new InvalidOperationException("Connected to KingbaseES but 'SELECT 1' did not return 1.");
-            }
-        }
-
-        private sealed class ProbeDbContext : DbContext
-        {
-            private readonly string _connectionString;
-
-            public ProbeDbContext(string connectionString)
-            {
-                _connectionString = connectionString;
-            }
-
-            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                => optionsBuilder.UseKdbndp(_connectionString);
-        }
-
         private sealed class WaitUntil : IWaitUntil
         {
-            private static readonly IList<string> Command = new List<string>
+            private static readonly IList<string> PrepareSshCommand = new List<string>
             {
                 "bash",
                 "-lc",
                 // Ensure sshd is available before running the image's entrypoint.
                 // The entrypoint script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
-                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }; HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }"
             };
+
+            private static readonly IList<string> StatusCheckCommand = new List<string>
+            {
+                "bash",
+                "-c",
+                "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+            };
+
+            private static readonly IList<string> EntrypointCommand = new List<string>
+            {
+                "bash",
+                "-c",
+                "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
+            };
+
+            private bool _entrypointExecuted;
 
             public async Task<bool> UntilAsync(IContainer container)
             {
-                var execResult = await container.ExecAsync(Command).ConfigureAwait(false);
-                return 0L.Equals(execResult.ExitCode);
+                try
+                {
+                    _ = await container.ExecAsync(PrepareSshCommand).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
+                }
+
+                var statusResult = await container.ExecAsync(StatusCheckCommand).ConfigureAwait(false);
+                if (0L.Equals(statusResult.ExitCode))
+                {
+                    return true;
+                }
+
+                if (!_entrypointExecuted)
+                {
+                    _ = await container.ExecAsync(EntrypointCommand).ConfigureAwait(false);
+                    _entrypointExecuted = true;
+                }
+
+                // Give the DB a moment to come up after entrypoint.
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                statusResult = await container.ExecAsync(StatusCheckCommand).ConfigureAwait(false);
+                return 0L.Equals(statusResult.ExitCode);
             }
         }
     }
