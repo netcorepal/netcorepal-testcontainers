@@ -1,5 +1,6 @@
 namespace Testcontainers.KingbaseES.UnitTests;
 
+using System.Data;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -117,6 +118,20 @@ public abstract class KingbaseESContainerTest
             {
                 throw new InvalidOperationException("Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
             }
+
+            var connection = dbContext.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+            {
+                await connection.OpenAsync();
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            var result = await command.ExecuteScalarAsync();
+            if (result is null || Convert.ToInt32(result) != 1)
+            {
+                throw new InvalidOperationException("Connected to KingbaseES but 'SELECT 1' did not return 1.");
+            }
         }
 
         private sealed class ProbeDbContext : DbContext
@@ -138,7 +153,9 @@ public abstract class KingbaseESContainerTest
             {
                 "bash",
                 "-lc",
-                "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+                // Ensure sshd is available before running the image's entrypoint.
+                // The entrypoint script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
+                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }; HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
             };
 
             public async Task<bool> UntilAsync(IContainer container)

@@ -58,6 +58,23 @@ var connectionString = kingbaseESContainer.GetConnectionString();
 
 注意：如果你自行覆盖 `WithWaitStrategy(...)`，请确保你的等待策略仍会触发上述脚本（或以其它方式启动数据库），否则可能出现“容器已运行但端口永远不开放”的卡死情况。
 
+### 关于 SSH 卡住（重要）
+
+该镜像的 `docker-entrypoint.sh` 在初始化过程中会通过 SSH 连接 `ALL_NODE_IP`（默认 `localhost/127.0.0.1`）。
+在部分环境（尤其是 Linux CI 上的 systemd 变体、缺失 dbus 的 systemd 容器）中，`sshd` 可能不会自动启动或缺少 host key，导致 entrypoint 在等待 SSH 时表现为“卡住”。
+
+本库的默认等待策略会在执行 entrypoint 前尝试：
+
+- 生成 SSH host key（`ssh-keygen -A`，幂等）
+- 启动 `sshd`（后台运行）
+
+如果你自定义了 `WithWaitStrategy(...)` 并自行执行 entrypoint，请务必包含同等的 SSH 准备步骤，否则可能会遇到启动卡死。
+
+排查建议：
+
+- `docker exec <container> sh -lc 'pgrep -x sshd || echo "sshd not running"'`
+- 查看 `/tmp/sshd.log`（如果你的等待策略/脚本使用了该路径输出日志）
+
 ## 本机快速验证命令（推荐）
 
 下面是一组可直接在 macOS（Docker Desktop）/Linux 上执行的命令，用于验证该镜像的启动机制：容器默认只启动 systemd，必须执行 `docker-entrypoint.sh` 才会安装并启动数据库。
