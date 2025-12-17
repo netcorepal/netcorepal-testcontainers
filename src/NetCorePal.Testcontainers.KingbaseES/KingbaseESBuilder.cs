@@ -180,6 +180,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     private sealed class WaitUntilStarted : IWaitUntil
     {
         private bool _entrypointExecuted = false;
+        private int _retryCount = 0;
 
         public async Task<bool> UntilAsync(IContainer container)
         {
@@ -204,18 +205,40 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                 {
                     "bash",
                     "-c",
-                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1"
+                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
                 };
 
                 // Execute entrypoint and wait for it to complete (this may take several minutes)
-                await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
+                var entrypointResult = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
                 _entrypointExecuted = true;
 
-                // Give the database a moment to start after entrypoint completes
-                await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                // Check if entrypoint succeeded
+                var exitCodeCommand = new List<string> { "bash", "-c", "cat /tmp/kingbase-entrypoint.exitcode 2>/dev/null || echo 1" };
+                var exitCodeResult = await container.ExecAsync(exitCodeCommand).ConfigureAwait(false);
+                
+                // Wait progressively longer for database to start (up to 30 seconds total)
+                // The database initialization can take time after entrypoint completes
+                for (int i = 0; i < 6; i++)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                    statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+                    if (0L.Equals(statusResult.ExitCode))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else
+            {
+                // On subsequent retries, wait a bit before checking again
+                _retryCount++;
+                if (_retryCount <= 10)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                }
             }
 
-            // Check if database is running now
+            // Final check if database is running now
             statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
             return 0L.Equals(statusResult.ExitCode);
         }
