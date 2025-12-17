@@ -4,6 +4,7 @@ using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using Docker.DotNet.Models;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Testcontainers.KingbaseES;
@@ -93,7 +94,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     protected override KingbaseESBuilder Init()
     {
-        return base.Init()
+        var builder = base.Init()
             .WithPortBinding(KingbaseESPort, true)
             .WithHostname(DefaultHostname)
             .WithEnvironment("ALL_NODE_IP", DefaultAllNodeIp)
@@ -103,11 +104,24 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             // Note: systemd images may clear HOSTNAME from the environment at runtime; the wait strategy uses `hostname`.
             .WithEnvironment("HOSTNAME", DefaultHostname)
             // The entrypoint script expects DB_PASSWORD to be base64.
-                .WithEnvironment("DB_PASSWORD", Base64Encode(DefaultPassword))
-                .WithPrivileged(true)
+            .WithEnvironment("DB_PASSWORD", Base64Encode(DefaultPassword))
+            .WithPrivileged(true)
             .WithDatabase(DefaultDatabase)
             .WithUsername(DefaultUsername)
             .WithPassword(DefaultPassword);
+
+        // systemd-based images commonly require extra host config to boot reliably on Linux CI runners.
+        // Keep this Linux-only to avoid breaking macOS/Windows Docker environments.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            builder = builder
+                .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup", AccessMode.ReadWrite)
+                .WithTmpfsMount("/run")
+                .WithTmpfsMount("/run/lock")
+                .WithEnvironment("container", "docker");
+        }
+
+        return builder;
     }
 
     protected override void Validate()
