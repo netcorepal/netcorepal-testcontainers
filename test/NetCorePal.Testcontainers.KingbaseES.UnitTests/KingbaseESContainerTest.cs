@@ -2,7 +2,9 @@ namespace Testcontainers.KingbaseES.UnitTests;
 
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
+using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
+using Microsoft.EntityFrameworkCore;
 
 public abstract class KingbaseESContainerTest
 {
@@ -46,7 +48,7 @@ public abstract class KingbaseESContainerTest
             return builder;
         }
 
-        public async Task InitializeAsync()
+        public virtual async Task InitializeAsync()
         {
             if (!IsDockerEnabled)
             {
@@ -91,8 +93,59 @@ public abstract class KingbaseESContainerTest
         protected override KingbaseESBuilder Configure(KingbaseESBuilder builder)
         {
             // Demonstrates how consumers can override the default wait strategy.
+            // Note: this image does not start the database automatically; a custom wait strategy must still
+            // trigger the image-provided docker-entrypoint.sh to initialize/start the DB.
             return builder.WithWaitStrategy(
-                Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(KingbaseESBuilder.KingbaseESPort));
+                Wait.ForUnixContainer().AddCustomWaitStrategy(
+                    new WaitUntil(),
+                    waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(5))));
+        }
+
+        public override async Task InitializeAsync()
+        {
+            await base.InitializeAsync();
+
+            if (Container is null)
+            {
+                return;
+            }
+
+            // Validate the DB is actually reachable via the EF Core provider.
+            await using var dbContext = new ProbeDbContext(Container.GetConnectionString());
+            var canConnect = await dbContext.Database.CanConnectAsync();
+            if (!canConnect)
+            {
+                throw new InvalidOperationException("Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
+            }
+        }
+
+        private sealed class ProbeDbContext : DbContext
+        {
+            private readonly string _connectionString;
+
+            public ProbeDbContext(string connectionString)
+            {
+                _connectionString = connectionString;
+            }
+
+            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+                => optionsBuilder.UseKdbndp(_connectionString);
+        }
+
+        private sealed class WaitUntil : IWaitUntil
+        {
+            private static readonly IList<string> Command = new List<string>
+            {
+                "bash",
+                "-lc",
+                "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+            };
+
+            public async Task<bool> UntilAsync(IContainer container)
+            {
+                var execResult = await container.ExecAsync(Command).ConfigureAwait(false);
+                return 0L.Equals(execResult.ExitCode);
+            }
         }
     }
 

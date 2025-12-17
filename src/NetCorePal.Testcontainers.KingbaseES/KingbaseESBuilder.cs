@@ -4,6 +4,7 @@ using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
 using Docker.DotNet.Models;
+using System.Text;
 
 namespace Testcontainers.KingbaseES;
 
@@ -14,11 +15,22 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     public const ushort KingbaseESPort = 54321;
 
-    public const string DefaultDatabase = "TEST";
+    // The image initializes the lower-case "test" database by default.
+    public const string DefaultDatabase = "test";
 
     public const string DefaultUsername = "system";
 
-    public const string DefaultPassword = "Test@123";
+    // The image's entrypoint script defaults to db_password_base64="MTIzNDU2NzhhYgo=" -> "12345678ab".
+    public const string DefaultPassword = "12345678ab";
+
+    private const string DefaultAllNodeIp = "localhost";
+
+    private const string DefaultReplicaCount = "1";
+
+    private const string DefaultTrustedIp = "127.0.0.1";
+
+    // The image's entrypoint script expects a StatefulSet-like hostname ending with "-0" for a single-node init.
+    private const string DefaultHostname = "kingbase-0";
 
     public KingbaseESBuilder()
         : this(KingbaseESImage)
@@ -56,20 +68,25 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     public KingbaseESBuilder WithPassword(string password)
     {
-        return Merge(DockerResourceConfiguration, new KingbaseESConfiguration(password: password));
+        return Merge(DockerResourceConfiguration, new KingbaseESConfiguration(password: password))
+            // The image entrypoint expects DB_PASSWORD to be base64.
+            .WithEnvironment("DB_PASSWORD", Base64Encode(password));
     }
 
     public override KingbaseESContainer Build()
     {
         Validate();
 
-        // By default, the base builder waits until the container is running. For KingbaseES, a more advanced waiting strategy is necessary.
-        // If the user does not provide a custom waiting strategy, append the default KingbaseES waiting strategy.
+        // By default, the base builder waits until the container is running.
+        // This image uses systemd as entrypoint and does NOT automatically start the database;
+        // therefore the default wait strategy must trigger the image-provided initialization script first.
         var kingbaseESBuilder = DockerResourceConfiguration.WaitStrategies.Count() > 1
             ? this
             : WithWaitStrategy(
                 Wait.ForUnixContainer()
-                    .UntilInternalTcpPortIsAvailable(KingbaseESPort));
+                    .AddCustomWaitStrategy(
+                        new WaitUntil(),
+                        waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(5))));
 
         return new KingbaseESContainer(kingbaseESBuilder.DockerResourceConfiguration);
     }
@@ -78,11 +95,16 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     {
         return base.Init()
             .WithPortBinding(KingbaseESPort, true)
-            .WithEnvironment("ENABLE_CI", "yes")
-            .WithEnvironment("DB_USER", DefaultUsername)
-            .WithEnvironment("DB_PASSWORD", DefaultPassword)
-            .WithEnvironment("DB_MODE", "oracle")
-            .WithPrivileged(true)
+            .WithHostname(DefaultHostname)
+            .WithEnvironment("ALL_NODE_IP", DefaultAllNodeIp)
+            .WithEnvironment("REPLICA_COUNT", DefaultReplicaCount)
+            .WithEnvironment("TRUST_IP", DefaultTrustedIp)
+            // Ensure the entrypoint script has a suitable HOSTNAME env var.
+            // Note: systemd images may clear HOSTNAME from the environment at runtime; the wait strategy uses `hostname`.
+            .WithEnvironment("HOSTNAME", DefaultHostname)
+            // The entrypoint script expects DB_PASSWORD to be base64.
+                .WithEnvironment("DB_PASSWORD", Base64Encode(DefaultPassword))
+                .WithPrivileged(true)
             .WithDatabase(DefaultDatabase)
             .WithUsername(DefaultUsername)
             .WithPassword(DefaultPassword);
@@ -114,5 +136,28 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     protected override KingbaseESBuilder Merge(KingbaseESConfiguration oldValue, KingbaseESConfiguration newValue)
     {
         return new KingbaseESBuilder(new KingbaseESConfiguration(oldValue, newValue));
+    }
+
+    private static string Base64Encode(string value)
+    {
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+    }
+
+    private sealed class WaitUntil : IWaitUntil
+    {
+        private static readonly IList<string> Command = new List<string>
+        {
+            "bash",
+            "-lc",
+            // Trigger the image-provided initialization/start logic.
+            // Then probe sys_ctl as the `kingbase` user (sys_ctl refuses to run as root).
+            "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/dev/null 2>&1 && runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
+        };
+
+        public async Task<bool> UntilAsync(IContainer container)
+        {
+            var execResult = await container.ExecAsync(Command).ConfigureAwait(false);
+            return 0L.Equals(execResult.ExitCode);
+        }
     }
 }

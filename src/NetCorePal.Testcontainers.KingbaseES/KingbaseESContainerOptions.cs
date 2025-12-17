@@ -10,9 +10,9 @@ public sealed record KingbaseESContainerOptions
 
     public string Username { get; init; } = "system";
 
-    public string Password { get; init; } = "Test@123";
+    public string Password { get; init; } = "12345678ab";
 
-    public string Database { get; init; } = "TEST";
+    public string Database { get; init; } = "test";
 
     public bool Privileged { get; init; } = true;
 
