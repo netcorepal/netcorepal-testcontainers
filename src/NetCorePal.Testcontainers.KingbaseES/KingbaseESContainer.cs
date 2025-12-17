@@ -25,8 +25,6 @@ public sealed class KingbaseESContainer : DockerContainer, IDatabaseContainer
         await StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    
-
     public string GetConnectionString()
     {
         var properties = new Dictionary<string, string>();

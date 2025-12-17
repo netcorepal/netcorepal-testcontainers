@@ -246,13 +246,11 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     private sealed class WaitUntilSqlReady : IWaitUntil
     {
-        private readonly string _username;
         private readonly string _password;
         private int _retryCount = 0;
 
         public WaitUntilSqlReady(string username, string password)
         {
-            _username = username;
             _password = password;
         }
 
@@ -288,8 +286,6 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             var result = await container.ExecAsync(command).ConfigureAwait(false);
             if (0L.Equals(result.ExitCode))
             {
-                // Reset retry count on success
-                _retryCount = 0;
                 return true;
             }
 
