@@ -21,7 +21,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     public const string DefaultUsername = "system";
 
-    // The image's entrypoint script defaults to db_password_base64="MTIzNDU2NzhhYgo=" -> "12345678ab".
+    // The image's entrypoint ultimately uses the plaintext password "12345678ab" by default.
+    // Note: the image may store/propagate a base64 form internally, but the env var DB_PASSWORD is expected to be plaintext.
     public const string DefaultPassword = "12345678ab";
 
     private const string DefaultAllNodeIp = "localhost";
@@ -70,8 +71,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     public KingbaseESBuilder WithPassword(string password)
     {
         return Merge(DockerResourceConfiguration, new KingbaseESConfiguration(password: password))
-            // The image entrypoint expects DB_PASSWORD to be base64.
-            .WithEnvironment("DB_PASSWORD", Base64Encode(password));
+            // The image entrypoint expects DB_PASSWORD to be plaintext.
+            .WithEnvironment("DB_PASSWORD", password);
     }
 
     public override KingbaseESContainer Build()
@@ -118,8 +119,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             // Ensure the entrypoint script has a suitable HOSTNAME env var.
             // Note: systemd images may clear HOSTNAME from the environment at runtime; the wait strategy uses `hostname`.
             .WithEnvironment("HOSTNAME", DefaultHostname)
-            // The entrypoint script expects DB_PASSWORD to be base64.
-            .WithEnvironment("DB_PASSWORD", Base64Encode(DefaultPassword))
+            // The entrypoint script expects DB_PASSWORD to be plaintext.
+            .WithEnvironment("DB_PASSWORD", DefaultPassword)
             .WithPrivileged(true)
             .WithDatabase(DefaultDatabase)
             .WithUsername(DefaultUsername)
@@ -167,11 +168,6 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
         return new KingbaseESBuilder(new KingbaseESConfiguration(oldValue, newValue));
     }
 
-    private static string Base64Encode(string value)
-    {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
-    }
-
     private static string EscapeBashSingleQuotes(string value)
     {
         return value.Replace("'", "'\"'\"'");
@@ -179,8 +175,8 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     private sealed class WaitUntilStarted : IWaitUntil
     {
-        private bool _entrypointExecuted = false;
-        private int _retryCount = 0;
+        private bool _entrypointExecuted;
+        private int _retryCount;
 
         public async Task<bool> UntilAsync(IContainer container)
         {
@@ -190,10 +186,11 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             // We proactively generate host keys and start sshd in background to unblock initialization.
             var prepareSshCommand = new List<string>
             {
-                "bash",
+                "sh",
                 "-lc",
-                // If sshd is not running, generate host keys (idempotent) and start sshd.
-                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 & disown) || true; sleep 1; }"
+                // If sshd is not running, generate host keys (idempotent) and start sshd in background.
+                // Note: avoid `disown` (bash-only) for broader shell compatibility.
+                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
             };
 
             try
@@ -207,61 +204,43 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
             var statusCheckCommand = new List<string>
             {
-                "bash",
-                "-c",
+                "sh",
+                "-lc",
                 "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
             };
 
-            // If we haven't executed the entrypoint yet, execute it now
-            // This ensures the database is properly initialized on first check.
-            if (!_entrypointExecuted)
+            // Fast path: DB already running.
+            var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+            if (0L.Equals(statusResult.ExitCode))
+            {
+                return true;
+            }
+
+            // Execute the image entrypoint at least once to initialize/start the DB.
+            // If the first attempt failed (common when SSH isn't ready), allow a few retries.
+            var shouldRunEntrypoint = !_entrypointExecuted || _retryCount < 3;
+            if (shouldRunEntrypoint)
             {
                 var entrypointCommand = new List<string>
                 {
-                    "bash",
-                    "-c",
+                    "sh",
+                    "-lc",
                     "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
                 };
 
-                // Execute entrypoint and wait for it to complete (this may take several minutes)
-                var entrypointResult = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
                 _entrypointExecuted = true;
 
-                // Check if entrypoint succeeded
-                var exitCodeCommand = new List<string> { "bash", "-c", "cat /tmp/kingbase-entrypoint.exitcode 2>/dev/null || echo 1" };
-                var exitCodeResult = await container.ExecAsync(exitCodeCommand).ConfigureAwait(false);
-                
-                // Wait progressively longer for database to start (up to 30 seconds total)
-                // The database initialization can take time after entrypoint completes
-                for (int i = 0; i < 6; i++)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-                    var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-                    if (0L.Equals(statusResult.ExitCode))
-                    {
-                        return true;
-                    }
-                }
-            }
-            else
-            {
-                // On subsequent retries, just check the status and wait a bit
-                var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-                if (0L.Equals(statusResult.ExitCode))
-                {
-                    return true;
-                }
+                _ = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
 
-                _retryCount++;
-                if (_retryCount <= 10)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-                }
+                // Give the DB a moment to come up after entrypoint.
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
             }
 
-            // Final check if database is running now
-            var finalStatusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-            return 0L.Equals(finalStatusResult.ExitCode);
+            _retryCount++;
+
+            // Final check: DB running now?
+            statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
+            return 0L.Equals(statusResult.ExitCode);
         }
     }
 
@@ -300,7 +279,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
             var command = new List<string>
             {
-                "bash",
+                "sh",
                 "-lc",
                 // Ensure select 1 returns '1' exactly.
                 $"{prefix}{connectQuery} -c '{sqlForBash}' | grep -qx '1'"
