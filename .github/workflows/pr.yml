@@ -37,4 +37,4 @@ jobs:
         run: dotnet build -c Release -f ${{ matrix.framework }} --no-restore
 
       - name: Test
-        run: dotnet test -c Release -f ${{ matrix.framework }} --no-build
+        run: dotnet test -c Release -f ${{ matrix.framework }} --no-build --verbosity normal --logger "console;verbosity=detailed"
