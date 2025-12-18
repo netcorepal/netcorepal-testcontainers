@@ -16,9 +16,9 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
 
     public const string DefaultDatabase = "testdb";
 
-    public const string DefaultUsername = "testdb";
+    public const string DefaultUsername = "SYSDBA";
 
-    public const string DefaultPassword = "TestDm123";
+    public const string DefaultPassword = "SYSDBA_abc123";
 
     public const string DefaultDbaPassword = "SYSDBA_abc123";
 

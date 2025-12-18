@@ -119,7 +119,7 @@ public abstract class DmdbContainerTest
     {
         protected override DmdbBuilder Configure(DmdbBuilder builder)
         {
-            return builder.WithPassword("TestDm456");
+            return builder.WithPassword("TestDm456").WithDbaPassword("TestDm456");
         }
     }
 
@@ -144,13 +144,12 @@ public abstract class DmdbContainerTest
         }
     }
 
-    public sealed class DmdbDifferentDatabaseAndUsernameFixture : DmdbDefaultFixture
+    public sealed class DmdbDifferentDatabaseFixture : DmdbDefaultFixture
     {
         protected override DmdbBuilder Configure(DmdbBuilder builder)
         {
             return builder
-                .WithDatabase("mydb")
-                .WithUsername("myuser");
+                .WithDatabase("mydb");
         }
     }
 
@@ -166,6 +165,6 @@ public abstract class DmdbContainerTest
     public sealed class DmdbImageTagConfiguration(DmdbImageTagFixture fixture)
         : DmdbContainerTest(fixture), IClassFixture<DmdbImageTagFixture>;
 
-    public sealed class DmdbDifferentDatabaseAndUsernameConfiguration(DmdbDifferentDatabaseAndUsernameFixture fixture)
-        : DmdbContainerTest(fixture), IClassFixture<DmdbDifferentDatabaseAndUsernameFixture>;
+    public sealed class DmdbDifferentDatabaseConfiguration(DmdbDifferentDatabaseFixture fixture)
+        : DmdbContainerTest(fixture), IClassFixture<DmdbDifferentDatabaseFixture>;
 }
