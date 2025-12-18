@@ -58,12 +58,15 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
 
     public DmdbBuilder WithPassword(string password)
     {
-        return Merge(DockerResourceConfiguration, new DmdbConfiguration(password: password));
+        return Merge(DockerResourceConfiguration, new DmdbConfiguration(password: password))
+            .WithEnvironment("DM_USER_PWD", password);
     }
 
     public DmdbBuilder WithDbaPassword(string dbaPassword)
     {
-        return Merge(DockerResourceConfiguration, new DmdbConfiguration(dbaPassword: dbaPassword));
+        return Merge(DockerResourceConfiguration, new DmdbConfiguration(dbaPassword: dbaPassword))
+            .WithEnvironment("SYSDBA_PWD", dbaPassword)
+            .WithEnvironment("SYSAUDITOR_PWD", dbaPassword);
     }
 
     public override DmdbContainer Build()
@@ -89,6 +92,9 @@ public sealed class DmdbBuilder : ContainerBuilder<DmdbBuilder, DmdbContainer, D
         return base.Init()
             .WithPortBinding(DmdbPort, true)
             .WithPrivileged(true)
+            .WithEnvironment("DM_USER_PWD", DefaultPassword)
+            .WithEnvironment("SYSDBA_PWD", DefaultDbaPassword)
+            .WithEnvironment("SYSAUDITOR_PWD", DefaultDbaPassword)
             .WithDatabase(DefaultDatabase)
             .WithUsername(DefaultUsername)
             .WithPassword(DefaultPassword)
