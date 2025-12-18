@@ -23,6 +23,7 @@ jobs:
       framework: ${{ matrix.framework }}
       dotnet-version: ${{ matrix.dotnet-version }}
       test-verbosity: 'minimal'
+      test-projects: 'test/NetCorePal.Testcontainers.DMDB.UnitTests/NetCorePal.Testcontainers.DMDB.UnitTests.csproj test/NetCorePal.Testcontainers.KingbaseES.UnitTests/NetCorePal.Testcontainers.KingbaseES.UnitTests.csproj test/NetCorePal.Testcontainers.OpenGauss.UnitTests/NetCorePal.Testcontainers.OpenGauss.UnitTests.csproj'
 
   pack_push:
     runs-on: ubuntu-latest

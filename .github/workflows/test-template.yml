@@ -31,6 +31,10 @@ on:
         description: 'Specific test project path (optional)'
         type: string
         default: ''
+      test-projects:
+        description: 'List of test projects to run (space-separated, optional). If not specified and test-project is empty, all tests will run.'
+        type: string
+        default: ''
 
 jobs:
   test:
@@ -54,6 +58,10 @@ jobs:
         run: |
           if [ -n "${{ inputs.test-project }}" ]; then
             dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-restore
+          elif [ -n "${{ inputs.test-projects }}" ]; then
+            for project in ${{ inputs.test-projects }}; do
+              dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-restore
+            done
           else
             dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-restore
           fi
@@ -66,6 +74,14 @@ jobs:
             else
               dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity ${{ inputs.test-verbosity }}
             fi
+          elif [ -n "${{ inputs.test-projects }}" ]; then
+            for project in ${{ inputs.test-projects }}; do
+              if [ "${{ inputs.test-verbosity }}" == "detailed" ]; then
+                dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity normal --logger "console;verbosity=detailed"
+              else
+                dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity ${{ inputs.test-verbosity }}
+              fi
+            done
           else
             dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-build --verbosity ${{ inputs.test-verbosity }}
           fi
