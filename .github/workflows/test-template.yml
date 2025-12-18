@@ -1,0 +1,71 @@
+name: Test Template
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: 'Architecture to run tests on'
+        type: string
+        default: 'amd64'
+      framework:
+        description: '.NET framework version'
+        type: string
+        required: true
+      dotnet-version:
+        description: '.NET SDK version to install'
+        type: string
+        required: true
+      package:
+        description: 'Package name to test (optional, for specific package tests)'
+        type: string
+        default: ''
+      build-config:
+        description: 'Build configuration'
+        type: string
+        default: 'Release'
+      test-verbosity:
+        description: 'Test verbosity level'
+        type: string
+        default: 'minimal'
+      test-project:
+        description: 'Specific test project path (optional)'
+        type: string
+        default: ''
+
+jobs:
+  test:
+    runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          include-prerelease: true
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: |
+          if [ -n "${{ inputs.test-project }}" ]; then
+            dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-restore
+          else
+            dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-restore
+          fi
+
+      - name: Test
+        run: |
+          if [ -n "${{ inputs.test-project }}" ]; then
+            if [ "${{ inputs.test-verbosity }}" == "detailed" ]; then
+              dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity normal --logger "console;verbosity=detailed"
+            else
+              dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity ${{ inputs.test-verbosity }}
+            fi
+          else
+            dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-build --verbosity ${{ inputs.test-verbosity }}
+          fi
