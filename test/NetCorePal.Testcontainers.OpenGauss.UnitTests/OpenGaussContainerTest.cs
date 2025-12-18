@@ -17,11 +17,17 @@ public abstract class OpenGaussContainerTest
     }
 
     [DockerFact]
-    public void ConnectionStateReturnsOpen()
+    public async Task ConnectionStateReturnsOpen()
     {
-        using DbConnection connection = _fixture.CreateConnection();
-        connection.Open();
+        await using DbConnection connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
         Assert.Equal(ConnectionState.Open, connection.State);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1;";
+        var result = await command.ExecuteScalarAsync();
+        Assert.NotNull(result);
+        Assert.Equal(1, Convert.ToInt32(result));
     }
 
     public class OpenGaussDefaultFixture : IAsyncLifetime
@@ -80,7 +86,7 @@ public abstract class OpenGaussContainerTest
                 throw new InvalidOperationException($"{nameof(DbProviderFactory)} did not create a connection.");
             }
 
-            connection.ConnectionString = Container.GetConnectionString();
+            connection.ConnectionString = Container.GetConnectionString() + ";No Reset On Close=true;";
             return connection;
         }
     }
