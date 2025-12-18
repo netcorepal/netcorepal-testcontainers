@@ -58,10 +58,12 @@ jobs:
         run: |
           if [ -n "${{ inputs.test-project }}" ]; then
             dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-restore
-          else
+          elif [ -n "${{ inputs.test-projects }}" ]; then
             for project in ${{ inputs.test-projects }}; do
               dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-restore
             done
+          else
+            dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-restore
           fi
 
       - name: Test
@@ -72,7 +74,7 @@ jobs:
             else
               dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity ${{ inputs.test-verbosity }}
             fi
-          else
+          elif [ -n "${{ inputs.test-projects }}" ]; then
             for project in ${{ inputs.test-projects }}; do
               if [ "${{ inputs.test-verbosity }}" == "detailed" ]; then
                 dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity normal --logger "console;verbosity=detailed"
@@ -80,4 +82,6 @@ jobs:
                 dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity ${{ inputs.test-verbosity }}
               fi
             done
+          else
+            dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-build --verbosity ${{ inputs.test-verbosity }}
           fi
