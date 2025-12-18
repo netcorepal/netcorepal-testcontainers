@@ -1,5 +1,8 @@
 namespace Testcontainers.DMDB.UnitTests;
 
+using System.Data;
+using System.Data.Common;
+using Dm;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Images;
@@ -27,6 +30,20 @@ public abstract class DmdbContainerTest
         Assert.Contains("Timeout=", connectionString);
     }
 
+    [DockerFact]
+    public async Task ConnectionStateReturnsOpen()
+    {
+        await using DbConnection connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        Assert.Equal(ConnectionState.Open, connection.State);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1;";
+        var result = await command.ExecuteScalarAsync();
+        Assert.NotNull(result);
+        Assert.Equal(1, Convert.ToInt32(result));
+    }
+
     public class DmdbDefaultFixture : IAsyncLifetime
     {
         private readonly DmdbBuilder _builder;
@@ -41,6 +58,8 @@ public abstract class DmdbContainerTest
         protected static bool IsDockerEnabled
             => !string.Equals(Environment.GetEnvironmentVariable("SKIP_DOCKER_TESTS"), "1", StringComparison.Ordinal)
                && !string.Equals(Environment.GetEnvironmentVariable("RUN_DOCKER_TESTS"), "0", StringComparison.Ordinal);
+
+        public virtual DbProviderFactory DbProviderFactory => DmClientFactory.Instance;
 
         protected virtual DmdbBuilder Configure(DmdbBuilder builder)
         {
@@ -76,6 +95,23 @@ public abstract class DmdbContainerTest
             }
 
             return Container.GetConnectionString();
+        }
+
+        public DbConnection CreateConnection()
+        {
+            if (Container is null)
+            {
+                throw new InvalidOperationException("Docker integration tests are disabled. Unset SKIP_DOCKER_TESTS or set it to 0 to enable.");
+            }
+
+            var connection = DbProviderFactory.CreateConnection();
+            if (connection is null)
+            {
+                throw new InvalidOperationException($"{nameof(DbProviderFactory)} did not create a connection.");
+            }
+
+            connection.ConnectionString = Container.GetConnectionString();
+            return connection;
         }
     }
 
