@@ -6,19 +6,4 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        #arch: [ 'amd64', 'arm64' ]
-        arch: [ 'amd64' ]
-        framework: [ 'net8.0', 'net9.0', 'net10.0' ]
-        package: [ 'DMDB', 'KingbaseES', 'OpenGauss' ]
-
-    name: Test (${{ matrix.package }} / ${{ matrix.framework }} / ${{ matrix.arch }})
     uses: ./.github/workflows/test-template.yml
-    with:
-      arch: ${{ matrix.arch }}
-      framework: ${{ matrix.framework }}
-      dotnet-version: ${{ matrix.framework == 'net8.0' && '8.0.x' || matrix.framework == 'net9.0' && '9.0.x' || '10.0.x' }}
-      test-project: ${{ format('test/NetCorePal.Testcontainers.{0}.UnitTests/NetCorePal.Testcontainers.{0}.UnitTests.csproj', matrix.package) }}
-      test-verbosity: 'detailed'

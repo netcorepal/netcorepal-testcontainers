@@ -2,45 +2,22 @@ name: Test Template
 
 on:
   workflow_call:
-    inputs:
-      arch:
-        description: 'Architecture to run tests on'
-        type: string
-        default: 'amd64'
-      framework:
-        description: '.NET framework version'
-        type: string
-        required: true
-      dotnet-version:
-        description: '.NET SDK version to install'
-        type: string
-        required: true
-      package:
-        description: 'Package name to test (optional, for specific package tests)'
-        type: string
-        default: ''
-      build-config:
-        description: 'Build configuration'
-        type: string
-        default: 'Release'
-      test-verbosity:
-        description: 'Test verbosity level'
-        type: string
-        default: 'minimal'
-      test-project:
-        description: 'Specific test project path (optional)'
-        type: string
-        default: ''
-      test-projects:
-        description: 'List of test projects to run (space-separated, optional). If not specified and test-project is empty, all tests will run.'
-        type: string
-        default: 'test/NetCorePal.Testcontainers.DMDB.UnitTests/NetCorePal.Testcontainers.DMDB.UnitTests.csproj test/NetCorePal.Testcontainers.KingbaseES.UnitTests/NetCorePal.Testcontainers.KingbaseES.UnitTests.csproj test/NetCorePal.Testcontainers.OpenGauss.UnitTests/NetCorePal.Testcontainers.OpenGauss.UnitTests.csproj'
 
 jobs:
   test:
-    runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
     permissions:
       contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        #arch: [ 'amd64', 'arm64' ]
+        arch: [ 'amd64' ]
+        framework: [ 'net8.0', 'net9.0', 'net10.0' ]
+        package: [ 'DMDB', 'KingbaseES', 'OpenGauss' ]
+
+    name: Test (${{ matrix.package }} / ${{ matrix.framework }} / ${{ matrix.arch }})
 
     steps:
       - uses: actions/checkout@v4
@@ -48,40 +25,14 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ inputs.dotnet-version }}
+          dotnet-version: ${{ matrix.framework == 'net8.0' && '8.0.x' || matrix.framework == 'net9.0' && '9.0.x' || '10.0.x' }}
           include-prerelease: true
 
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Build
-        run: |
-          if [ -n "${{ inputs.test-project }}" ]; then
-            dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-restore
-          elif [ -n "${{ inputs.test-projects }}" ]; then
-            for project in ${{ inputs.test-projects }}; do
-              dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-restore
-            done
-          else
-            dotnet build -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-restore
-          fi
+        run: dotnet build -c Release -f ${{ matrix.framework }} ${{ format('test/NetCorePal.Testcontainers.{0}.UnitTests/NetCorePal.Testcontainers.{0}.UnitTests.csproj', matrix.package) }} --no-restore
 
       - name: Test
-        run: |
-          if [ -n "${{ inputs.test-project }}" ]; then
-            if [ "${{ inputs.test-verbosity }}" == "detailed" ]; then
-              dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity normal --logger "console;verbosity=detailed"
-            else
-              dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} ${{ inputs.test-project }} --no-build --verbosity ${{ inputs.test-verbosity }}
-            fi
-          elif [ -n "${{ inputs.test-projects }}" ]; then
-            for project in ${{ inputs.test-projects }}; do
-              if [ "${{ inputs.test-verbosity }}" == "detailed" ]; then
-                dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity normal --logger "console;verbosity=detailed"
-              else
-                dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} "$project" --no-build --verbosity ${{ inputs.test-verbosity }}
-              fi
-            done
-          else
-            dotnet test -c ${{ inputs.build-config }} -f ${{ inputs.framework }} --no-build --verbosity ${{ inputs.test-verbosity }}
-          fi
+        run: dotnet test -c Release -f ${{ matrix.framework }} ${{ format('test/NetCorePal.Testcontainers.{0}.UnitTests/NetCorePal.Testcontainers.{0}.UnitTests.csproj', matrix.package) }} --no-build --verbosity normal --logger "console;verbosity=detailed"
