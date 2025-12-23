@@ -72,7 +72,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     {
         return Merge(DockerResourceConfiguration, new KingbaseESConfiguration(password: password))
             // The image entrypoint expects DB_PASSWORD to be plaintext.
-            .WithEnvironment("DB_PASSWORD", Base64Encode(password));
+            .WithEnvironment("DB_PASSWORD", RuntimeInformation.OSArchitecture == Architecture.Arm64 ? Base64Encode(password) : password);
     }
 
     public override KingbaseESContainer Build()
@@ -123,17 +123,6 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
             .WithUsername(DefaultUsername)
             .WithPassword(DefaultPassword);
 
-        // systemd-based images commonly require extra host config to boot reliably on Linux CI runners.
-        // Keep this Linux-only to avoid breaking macOS/Windows Docker environments.
-        // if (RuntimeInformation.OSArchitecture != Architecture.Arm64)
-        // {
-        //     builder = builder
-        //         .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup", AccessMode.ReadWrite)
-        //         .WithTmpfsMount("/run")
-        //         .WithTmpfsMount("/run/lock")
-        //         .WithEnvironment("container", "docker");
-        // }
-
         return builder;
     }
 
@@ -177,38 +166,17 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
     private sealed class WaitUntilStarted : IWaitUntil
     {
-        private bool _entrypointExecuted = false;
-        private bool _running = false;
-
         public async Task<bool> UntilAsync(IContainer container)
         {
-            if (_running == true)
-            {
-                return _entrypointExecuted;
-            }
-
-            if (_entrypointExecuted)
-            {
-                return true;
-            }
-
-
-            _running = true;
-
             if (RuntimeInformation.OSArchitecture != Architecture.Arm64)
             {
-                // Ensure sshd is available before running the image's entrypoint.
-                // The script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
-                // On some Linux/amd64 environments, sshd is not started by default under systemd-without-dbus.
-                // We proactively generate host keys and start sshd in background to unblock initialization.
                 var prepareSshCommand = new List<string>
                 {
                     "sh",
                     "-lc",
-                    // If sshd is not running, generate host keys (idempotent) and start sshd in background.
-                    // Note: avoid `disown` (bash-only) for broader shell compatibility.
                     "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
                 };
+
                 try
                 {
                     var r = await container.ExecAsync(prepareSshCommand).ConfigureAwait(false);
@@ -216,32 +184,29 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                 }
                 catch
                 {
-                    // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
+                    throw;
                 }
             }
 
-            // Execute the image entrypoint at least once to initialize/start the DB.
-            // If the first attempt failed (common when SSH isn't ready), allow a few retries.
-            var shouldRunEntrypoint = !_entrypointExecuted;
-            if (shouldRunEntrypoint)
+
+            var entrypointCommand = new List<string>
             {
-                var entrypointCommand = new List<string>
-                {
-                    "bash",
-                    "-lc",
-                    // Trigger the image-provided initialization/start logic.
-                    // Then probe sys_ctl as the `kingbase` user (sys_ctl refuses to run as root).
-                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh"
-                };
-                _entrypointExecuted = true;
-
+                "sh",
+                "-lc",
+                "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh"
+            };
+            try
+            {
                 var r = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
-                Console.WriteLine(r.Stderr);
-                // Give the DB a moment to come up after entrypoint.
-                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                Console.WriteLine(r.Stdout);
             }
-
-            return false;
+            catch
+            {
+                throw;
+            }
+            // Give the DB a moment to come up after entrypoint.
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            return true;
         }
     }
 }
