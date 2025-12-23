@@ -20,7 +20,7 @@ public abstract class KingbaseESContainerTest
     public async Task ConnectionStringContainsExpectedProperties()
     {
         var connectionString = _fixture.GetConnectionString();
-        
+
         Assert.Contains("Host=", connectionString);
         Assert.Contains("Port=", connectionString);
         Assert.Contains("Database=", connectionString);
@@ -38,7 +38,8 @@ public abstract class KingbaseESContainerTest
         var canConnect = await dbContext.Database.CanConnectAsync();
         if (!canConnect)
         {
-            throw new InvalidOperationException("Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
+            throw new InvalidOperationException(
+                "Failed to connect to KingbaseES using DotNetCore.EntityFrameworkCore.KingbaseES.");
         }
 
         var connection = dbContext.Database.GetDbConnection();
@@ -114,7 +115,8 @@ public abstract class KingbaseESContainerTest
         {
             if (Container is null)
             {
-                throw new InvalidOperationException("Docker integration tests are disabled. Unset SKIP_DOCKER_TESTS or set it to 0 to enable.");
+                throw new InvalidOperationException(
+                    "Docker integration tests are disabled. Unset SKIP_DOCKER_TESTS or set it to 0 to enable.");
             }
 
             return Container.GetConnectionString();
@@ -126,77 +128,6 @@ public abstract class KingbaseESContainerTest
         protected override KingbaseESBuilder Configure(KingbaseESBuilder builder)
         {
             return builder.WithPassword("Test@456");
-        }
-    }
-
-    public sealed class KingbaseESCustomWaitStrategyFixture : KingbaseESDefaultFixture
-    {
-        protected override KingbaseESBuilder Configure(KingbaseESBuilder builder)
-        {
-            // Demonstrates how consumers can override the default wait strategy.
-            // Note: this image does not start the database automatically; a custom wait strategy must still
-            // trigger the image-provided docker-entrypoint.sh to initialize/start the DB.
-            return builder.WithWaitStrategy(
-                Wait.ForUnixContainer().AddCustomWaitStrategy(
-                    new WaitUntil(),
-                    waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(5))));
-        }
-
-        private sealed class WaitUntil : IWaitUntil
-        {
-            private static readonly IList<string> PrepareSshCommand = new List<string>
-            {
-                "sh",
-                "-lc",
-                // Ensure sshd is available before running the image's entrypoint.
-                // The entrypoint script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
-                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
-            };
-
-            private static readonly IList<string> StatusCheckCommand = new List<string>
-            {
-                "sh",
-                "-lc",
-                "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
-            };
-
-            private static readonly IList<string> EntrypointCommand = new List<string>
-            {
-                "sh",
-                "-lc",
-                "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
-            };
-
-            private bool _entrypointExecuted;
-
-            public async Task<bool> UntilAsync(IContainer container)
-            {
-                try
-                {
-                    _ = await container.ExecAsync(PrepareSshCommand).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
-                }
-
-                var statusResult = await container.ExecAsync(StatusCheckCommand).ConfigureAwait(false);
-                if (0L.Equals(statusResult.ExitCode))
-                {
-                    return true;
-                }
-
-                if (!_entrypointExecuted)
-                {
-                    _ = await container.ExecAsync(EntrypointCommand).ConfigureAwait(false);
-                    _entrypointExecuted = true;
-                }
-
-                // Give the DB a moment to come up after entrypoint.
-                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-                statusResult = await container.ExecAsync(StatusCheckCommand).ConfigureAwait(false);
-                return 0L.Equals(statusResult.ExitCode);
-            }
         }
     }
 
@@ -227,12 +158,10 @@ public abstract class KingbaseESContainerTest
     public sealed class KingbaseESDifferentPasswordConfiguration(KingbaseESDifferentPasswordFixture fixture)
         : KingbaseESContainerTest(fixture), IClassFixture<KingbaseESDifferentPasswordFixture>;
 
-    public sealed class KingbaseESCustomWaitStrategyConfiguration(KingbaseESCustomWaitStrategyFixture fixture)
-        : KingbaseESContainerTest(fixture), IClassFixture<KingbaseESCustomWaitStrategyFixture>;
-
     public sealed class KingbaseESImageTagConfiguration(KingbaseESImageTagFixture fixture)
         : KingbaseESContainerTest(fixture), IClassFixture<KingbaseESImageTagFixture>;
 
-    public sealed class KingbaseESDifferentDatabaseAndUsernameConfiguration(KingbaseESDifferentDatabaseAndUsernameFixture fixture)
+    public sealed class KingbaseESDifferentDatabaseAndUsernameConfiguration(
+        KingbaseESDifferentDatabaseAndUsernameFixture fixture)
         : KingbaseESContainerTest(fixture), IClassFixture<KingbaseESDifferentDatabaseAndUsernameFixture>;
 }

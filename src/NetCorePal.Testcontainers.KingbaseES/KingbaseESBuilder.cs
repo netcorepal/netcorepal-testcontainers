@@ -72,7 +72,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
     {
         return Merge(DockerResourceConfiguration, new KingbaseESConfiguration(password: password))
             // The image entrypoint expects DB_PASSWORD to be plaintext.
-            .WithEnvironment("DB_PASSWORD", password);
+            .WithEnvironment("DB_PASSWORD", Base64Encode(password));
     }
 
     public override KingbaseESContainer Build()
@@ -92,10 +92,7 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
                     .AddCustomWaitStrategy(
                         new WaitUntilStarted(),
                         waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(10)))
-                    .AddCustomWaitStrategy(
-                        new WaitUntilSqlReady(GetEffectiveUsername(), GetEffectivePassword()),
-                        waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(10))));
-
+                    .UntilExternalTcpPortIsAvailable(KingbaseESPort));
         return new KingbaseESContainer(kingbaseESBuilder.DockerResourceConfiguration);
     }
 
@@ -128,14 +125,14 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
 
         // systemd-based images commonly require extra host config to boot reliably on Linux CI runners.
         // Keep this Linux-only to avoid breaking macOS/Windows Docker environments.
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            builder = builder
-                .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup", AccessMode.ReadWrite)
-                .WithTmpfsMount("/run")
-                .WithTmpfsMount("/run/lock")
-                .WithEnvironment("container", "docker");
-        }
+        // if (RuntimeInformation.OSArchitecture != Architecture.Arm64)
+        // {
+        //     builder = builder
+        //         .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup", AccessMode.ReadWrite)
+        //         .WithTmpfsMount("/run")
+        //         .WithTmpfsMount("/run/lock")
+        //         .WithEnvironment("container", "docker");
+        // }
 
         return builder;
     }
@@ -173,128 +170,75 @@ public sealed class KingbaseESBuilder : ContainerBuilder<KingbaseESBuilder, King
         return value.Replace("'", "'\"'\"'");
     }
 
+    private static string Base64Encode(string value)
+    {
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+    }
+
     private sealed class WaitUntilStarted : IWaitUntil
     {
-        private bool _entrypointExecuted;
-        private int _retryCount;
+        private bool _entrypointExecuted = false;
+        private bool _running = false;
 
         public async Task<bool> UntilAsync(IContainer container)
         {
-            // Ensure sshd is available before running the image's entrypoint.
-            // The script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
-            // On some Linux/amd64 environments, sshd is not started by default under systemd-without-dbus.
-            // We proactively generate host keys and start sshd in background to unblock initialization.
-            var prepareSshCommand = new List<string>
+            if (_running == true)
             {
-                "sh",
-                "-lc",
-                // If sshd is not running, generate host keys (idempotent) and start sshd in background.
-                // Note: avoid `disown` (bash-only) for broader shell compatibility.
-                "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
-            };
-
-            try
-            {
-                _ = await container.ExecAsync(prepareSshCommand).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
+                return _entrypointExecuted;
             }
 
-            var statusCheckCommand = new List<string>
-            {
-                "sh",
-                "-lc",
-                "runuser -u kingbase -- /home/kingbase/cluster/bin/sys_ctl status -D /home/kingbase/cluster/data >/dev/null 2>&1"
-            };
-
-            // Fast path: DB already running.
-            var statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-            if (0L.Equals(statusResult.ExitCode))
+            if (_entrypointExecuted)
             {
                 return true;
+            }
+
+
+            _running = true;
+
+            if (RuntimeInformation.OSArchitecture != Architecture.Arm64)
+            {
+                // Ensure sshd is available before running the image's entrypoint.
+                // The script requires SSH connectivity to ALL_NODE_IP (localhost/127.0.0.1).
+                // On some Linux/amd64 environments, sshd is not started by default under systemd-without-dbus.
+                // We proactively generate host keys and start sshd in background to unblock initialization.
+                var prepareSshCommand = new List<string>
+                {
+                    "sh",
+                    "-lc",
+                    // If sshd is not running, generate host keys (idempotent) and start sshd in background.
+                    // Note: avoid `disown` (bash-only) for broader shell compatibility.
+                    "pgrep -x sshd >/dev/null 2>&1 || { (command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -A || /usr/bin/ssh-keygen -A || true); (/usr/sbin/sshd -D -E /tmp/sshd.log >/dev/null 2>&1 &) || true; sleep 1; }"
+                };
+                try
+                {
+                    var r = await container.ExecAsync(prepareSshCommand).ConfigureAwait(false);
+                    Console.WriteLine(r.Stdout);
+                }
+                catch
+                {
+                    // Ignore SSH preparation failures; entrypoint may still succeed in other environments.
+                }
             }
 
             // Execute the image entrypoint at least once to initialize/start the DB.
             // If the first attempt failed (common when SSH isn't ready), allow a few retries.
-            var shouldRunEntrypoint = !_entrypointExecuted || _retryCount < 3;
+            var shouldRunEntrypoint = !_entrypointExecuted;
             if (shouldRunEntrypoint)
             {
                 var entrypointCommand = new List<string>
                 {
-                    "sh",
+                    "bash",
                     "-lc",
-                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh >/tmp/kingbase-entrypoint.log 2>&1; echo $? > /tmp/kingbase-entrypoint.exitcode"
+                    // Trigger the image-provided initialization/start logic.
+                    // Then probe sys_ctl as the `kingbase` user (sys_ctl refuses to run as root).
+                    "HOSTNAME=$(hostname) /home/kingbase/cluster/bin/docker-entrypoint.sh"
                 };
-
                 _entrypointExecuted = true;
 
-                _ = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
-
+                var r = await container.ExecAsync(entrypointCommand).ConfigureAwait(false);
+                Console.WriteLine(r.Stderr);
                 // Give the DB a moment to come up after entrypoint.
                 await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            }
-
-            _retryCount++;
-
-            // Final check: DB running now?
-            statusResult = await container.ExecAsync(statusCheckCommand).ConfigureAwait(false);
-            return 0L.Equals(statusResult.ExitCode);
-        }
-    }
-
-    private sealed class WaitUntilSqlReady : IWaitUntil
-    {
-        private readonly string _password;
-        private int _retryCount = 0;
-
-        public WaitUntilSqlReady(string username, string password)
-        {
-            _password = password;
-        }
-
-        public async Task<bool> UntilAsync(IContainer container)
-        {
-            var adminUser = DefaultUsername;
-            var adminPassword = _password;
-            var maintenanceDatabase = DefaultDatabase;
-
-            var pgpassLine = $"127.0.0.1:{KingbaseESPort}:*:{adminUser}:{adminPassword}";
-            var pgpassLineForBash = EscapeBashSingleQuotes(pgpassLine);
-
-            var prefix =
-                $"printf '%s\\n' '{pgpassLineForBash}' > /home/kingbase/.pgpass "
-                + "&& chown kingbase:kingbase /home/kingbase/.pgpass "
-                + "&& chmod 600 /home/kingbase/.pgpass; ";
-
-            var connectQuery =
-                "runuser -u kingbase -- env PGPASSFILE=/home/kingbase/.pgpass "
-                + $"/home/kingbase/cluster/bin/ksql -w -h 127.0.0.1 -p {KingbaseESPort} -U {adminUser} -d {maintenanceDatabase} -t -A";
-
-            var sql = "SELECT 1;";
-            var sqlForBash = EscapeBashSingleQuotes(sql);
-
-            var command = new List<string>
-            {
-                "sh",
-                "-lc",
-                // Ensure select 1 returns '1' exactly.
-                $"{prefix}{connectQuery} -c '{sqlForBash}' | grep -qx '1'"
-            };
-
-            var result = await container.ExecAsync(command).ConfigureAwait(false);
-            if (0L.Equals(result.ExitCode))
-            {
-                return true;
-            }
-
-            // Add a small delay before retrying to avoid hammering the container
-            // This is especially important in early initialization stages
-            _retryCount++;
-            if (_retryCount < 3)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             }
 
             return false;
