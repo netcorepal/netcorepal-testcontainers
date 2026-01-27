@@ -23,12 +23,12 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
 
     private async Task ProvisionAsync()
     {
-        var database = _configuration.Database ?? OpenGaussBuilder.DefaultDatabase;
+        var database = _configuration.Database ?? OpenGaussBuilder.InternalDatabase;
         var username = _configuration.Username ?? OpenGaussBuilder.DefaultUsername;
         var password = _configuration.Password ?? OpenGaussBuilder.DefaultPassword;
         var dbCompatibility = _configuration.DbCompatibility ?? OpenGaussBuilder.DefaultDbCompatibility;
 
-        var requiresProvisioning = !string.Equals(database, OpenGaussBuilder.DefaultDatabase, StringComparison.Ordinal)
+        var requiresProvisioning = !string.Equals(database, OpenGaussBuilder.InternalDatabase, StringComparison.Ordinal)
             || !string.Equals(username, OpenGaussBuilder.DefaultUsername, StringComparison.Ordinal);
 
         if (!requiresProvisioning)
@@ -40,7 +40,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
 
         // Ensure gsql has the right PATH/LD_LIBRARY_PATH.
         var prefix = "source /home/omm/.bashrc >/dev/null 2>&1 || true; ";
-        var connect = $"printf '%s\\n' '{adminPassword}' | gsql -h 127.0.0.1 -p {OpenGaussBuilder.OpenGaussPort} -U {OpenGaussBuilder.DefaultUsername} -d {OpenGaussBuilder.DefaultDatabase}";
+        var connect = $"printf '%s\\n' '{adminPassword}' | gsql -h 127.0.0.1 -p {OpenGaussBuilder.OpenGaussPort} -U {OpenGaussBuilder.DefaultUsername} -d {OpenGaussBuilder.InternalDatabase}";
         var connectQuery = $"{connect} -t -A";
 
         if (!string.Equals(username, OpenGaussBuilder.DefaultUsername, StringComparison.Ordinal))
@@ -75,7 +75,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
             }
         }
 
-        if (!string.Equals(database, OpenGaussBuilder.DefaultDatabase, StringComparison.Ordinal))
+        if (!string.Equals(database, OpenGaussBuilder.InternalDatabase, StringComparison.Ordinal))
         {
             var escapedDbId = EscapeSqlIdentifier(database);
             var escapedDbLiteral = EscapeSqlLiteral(database);
@@ -128,7 +128,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
         var properties = new Dictionary<string, string>();
         properties.Add("Host", Hostname);
         properties.Add("Port", GetMappedPublicPort(OpenGaussBuilder.OpenGaussPort).ToString());
-        properties.Add("Database", _configuration.Database ?? OpenGaussBuilder.DefaultDatabase);
+        properties.Add("Database", _configuration.Database ?? OpenGaussBuilder.InternalDatabase);
         properties.Add("Username", _configuration.Username ?? OpenGaussBuilder.DefaultUsername);
         properties.Add("Password", _configuration.Password ?? OpenGaussBuilder.DefaultPassword);
         return string.Join(";", properties.Select(property => string.Join("=", property.Key, property.Value)));

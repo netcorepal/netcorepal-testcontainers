@@ -14,13 +14,15 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
 
     public const ushort OpenGaussPort = 5432;
 
-    public const string DefaultDatabase = "postgres";
+    public const string InternalDatabase = "postgres";
+    
+    public const string DefaultDatabase = "testdb";
 
     public const string DefaultUsername = "gaussdb";
 
     public const string DefaultPassword = "Test@123";
 
-    public const string DefaultDbCompatibility = "A";
+    public const string DefaultDbCompatibility = "PG";
 
     public OpenGaussBuilder()
         : this(OpenGaussImage)
@@ -46,6 +48,13 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
 
     protected override OpenGaussConfiguration DockerResourceConfiguration { get; }
 
+
+    /// <summary>
+    /// 创建指定名称的数据库，并设置兼容方言（默认 PostgreSQL/PG）。
+    /// 支持：PG=PostgreSQL（默认）、A=Oracle、B=MySQL。
+    /// </summary>
+    /// <param name="database">要创建的数据库名称。</param>
+    /// <param name="dbCompatibility">兼容方言，PG/A/B。</param>
     public OpenGaussBuilder WithDatabase(string database, string dbCompatibility = DefaultDbCompatibility)
     {
         return Merge(DockerResourceConfiguration, new OpenGaussConfiguration(database: database, dbCompatibility: dbCompatibility));
@@ -133,7 +142,7 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
                 "bash",
                 "-lc",
                 // Always probe using the default admin user/database. Custom username/database can be provisioned after the container has started.
-                $"source /home/omm/.bashrc >/dev/null 2>&1 || true; printf '%s\\n' '{password}' | gsql -h 127.0.0.1 -p {OpenGaussPort} -U {DefaultUsername} -d {DefaultDatabase} -c 'SELECT 1;'"
+                $"source /home/omm/.bashrc >/dev/null 2>&1 || true; printf '%s\\n' '{password}' | gsql -h 127.0.0.1 -p {OpenGaussPort} -U {DefaultUsername} -d {InternalDatabase} -c 'SELECT 1;'"
             };
         }
 

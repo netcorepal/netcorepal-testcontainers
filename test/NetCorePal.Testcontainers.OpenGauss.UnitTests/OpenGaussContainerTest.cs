@@ -137,7 +137,7 @@ public abstract class OpenGaussContainerTest
                     var connectionString = string.Join(";",
                         $"Host={container.Hostname}",
                         $"Port={container.GetMappedPublicPort(OpenGaussBuilder.OpenGaussPort)}",
-                        $"Database={OpenGaussBuilder.DefaultDatabase}",
+                        $"Database={OpenGaussBuilder.InternalDatabase}",
                         $"Username={OpenGaussBuilder.DefaultUsername}",
                         $"Password={OpenGaussBuilder.DefaultPassword}");
 
