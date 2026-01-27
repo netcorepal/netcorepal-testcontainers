@@ -30,6 +30,28 @@ var connectionString = container.GetConnectionString();
 
 可以通过 `WithDatabase` / `WithUsername` / `WithPassword` 覆盖。
 
+### 数据库兼容模式（dbcompatibility）
+
+`WithDatabase(database, dbCompatibility)` 支持创建不同方言的数据库，默认值 `PG`。
+
+- `PG`：PostgreSQL 兼容（默认）
+- `A`：Oracle 兼容
+- `B`：MySQL 兼容
+
+示例：
+
+```csharp
+await using var container = new OpenGaussBuilder()
+  .WithDatabase("test3", "PG")
+  .WithUsername("appuser")
+  .WithPassword("Test@123")
+  .Build();
+
+await container.StartAsync();
+```
+
+启动后将执行：`CREATE DATABASE "test3" OWNER "appuser" DBcompatibility = 'PG';`
+
 ## Docker 集成测试
 
 默认会运行 Docker 集成测试。

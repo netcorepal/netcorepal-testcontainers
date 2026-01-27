@@ -20,6 +20,8 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
 
     public const string DefaultPassword = "Test@123";
 
+    public const string DefaultDbCompatibility = "PG";
+
     public OpenGaussBuilder()
         : this(OpenGaussImage)
     {
@@ -44,9 +46,9 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
 
     protected override OpenGaussConfiguration DockerResourceConfiguration { get; }
 
-    public OpenGaussBuilder WithDatabase(string database)
+    public OpenGaussBuilder WithDatabase(string database, string dbCompatibility = DefaultDbCompatibility)
     {
-        return Merge(DockerResourceConfiguration, new OpenGaussConfiguration(database: database));
+        return Merge(DockerResourceConfiguration, new OpenGaussConfiguration(database: database, dbCompatibility: dbCompatibility));
     }
 
     public OpenGaussBuilder WithUsername(string username)
@@ -84,7 +86,7 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
         return base.Init()
             .WithPortBinding(OpenGaussPort, true)
             .WithPrivileged(true)
-            .WithDatabase(DefaultDatabase)
+            .WithDatabase(DefaultDatabase, DefaultDbCompatibility)
             .WithUsername(DefaultUsername)
             .WithPassword(DefaultPassword);
     }

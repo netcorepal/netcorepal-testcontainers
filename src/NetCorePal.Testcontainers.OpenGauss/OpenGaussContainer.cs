@@ -24,6 +24,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
         var database = _configuration.Database ?? OpenGaussBuilder.DefaultDatabase;
         var username = _configuration.Username ?? OpenGaussBuilder.DefaultUsername;
         var password = _configuration.Password ?? OpenGaussBuilder.DefaultPassword;
+        var dbCompatibility = _configuration.DbCompatibility ?? OpenGaussBuilder.DefaultDbCompatibility;
 
         var requiresProvisioning = !string.Equals(database, OpenGaussBuilder.DefaultDatabase, StringComparison.Ordinal)
             || !string.Equals(username, OpenGaussBuilder.DefaultUsername, StringComparison.Ordinal);
@@ -76,6 +77,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
         {
             var escapedDbId = EscapeSqlIdentifier(database);
             var escapedDbLiteral = EscapeSqlLiteral(database);
+            var escapedDbCompatibilityLiteral = EscapeSqlLiteral(dbCompatibility);
 
             var owner = string.Equals(username, OpenGaussBuilder.DefaultUsername, StringComparison.Ordinal)
                 ? OpenGaussBuilder.DefaultUsername
@@ -83,7 +85,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
 
             var escapedOwnerId = EscapeSqlIdentifier(owner);
             var existsCheckSql = $"SELECT 1 FROM pg_database WHERE datname = '{escapedDbLiteral}';";
-            var createDbSql = $"CREATE DATABASE \"{escapedDbId}\" OWNER \"{escapedOwnerId}\";";
+            var createDbSql = $"CREATE DATABASE \"{escapedDbId}\" OWNER \"{escapedOwnerId}\" DBcompatibility = '{escapedDbCompatibilityLiteral}';";
 
             var existsCheckSqlForBash = EscapeBashSingleQuotes(existsCheckSql);
             var createDbSqlForBash = EscapeBashSingleQuotes(createDbSql);

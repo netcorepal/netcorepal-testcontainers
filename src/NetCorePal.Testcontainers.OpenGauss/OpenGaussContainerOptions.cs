@@ -14,6 +14,8 @@ public sealed record OpenGaussContainerOptions
 
     public string Database { get; init; } = "postgres";
 
+    public string DbCompatibility { get; init; } = "PG";
+
     public bool Privileged { get; init; } = true;
 
     public int TimeoutSeconds { get; init; } = 30;
