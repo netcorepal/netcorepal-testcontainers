@@ -20,7 +20,7 @@ public sealed class OpenGaussBuilder : ContainerBuilder<OpenGaussBuilder, OpenGa
 
     public const string DefaultPassword = "Test@123";
 
-    public const string DefaultDbCompatibility = "PG";
+    public const string DefaultDbCompatibility = "A";
 
     public OpenGaussBuilder()
         : this(OpenGaussImage)

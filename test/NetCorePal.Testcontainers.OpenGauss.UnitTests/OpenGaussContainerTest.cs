@@ -28,6 +28,23 @@ public abstract class OpenGaussContainerTest
         var result = await command.ExecuteScalarAsync();
         Assert.NotNull(result);
         Assert.Equal(1, Convert.ToInt32(result));
+
+        await using var command2 = connection.CreateCommand();
+        command2.CommandText = """
+            SELECT name, setting
+            FROM pg_settings
+            WHERE name ~* 'sql_compatibility';
+        """;
+        await using var reader = await command2.ExecuteReaderAsync();
+        var compatibilitySettings = new List<(string Name, string Setting)>();
+        while (await reader.ReadAsync())
+        {
+            var name = reader.GetString(0);
+            var setting = reader.GetString(1);
+            compatibilitySettings.Add((name, setting));
+        }
+        Assert.NotEmpty(compatibilitySettings);
+        Assert.Equal(_fixture.Container!.Configuration.DbCompatibility, compatibilitySettings[0].Setting);
     }
 
     public class OpenGaussDefaultFixture : IAsyncLifetime
