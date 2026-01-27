@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
     <!-- Centralized package version prefix for all projects in this repo -->
-    <VersionPrefix>1.0.2</VersionPrefix>
+    <VersionPrefix>1.0.3</VersionPrefix>
   </PropertyGroup>
 </Project>

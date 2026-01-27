@@ -7,6 +7,8 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
 {
     private readonly OpenGaussConfiguration _configuration;
 
+    public OpenGaussConfiguration Configuration => _configuration;
+
     public OpenGaussContainer(OpenGaussConfiguration configuration)
         : base(configuration)
     {
@@ -85,7 +87,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
 
             var escapedOwnerId = EscapeSqlIdentifier(owner);
             var existsCheckSql = $"SELECT 1 FROM pg_database WHERE datname = '{escapedDbLiteral}';";
-            var createDbSql = $"CREATE DATABASE \"{escapedDbId}\" OWNER \"{escapedOwnerId}\" DBcompatibility = '{escapedDbCompatibilityLiteral}';";
+            var createDbSql = $"CREATE DATABASE \"{escapedDbId}\" DBcompatibility = '{escapedDbCompatibilityLiteral}';";
 
             var existsCheckSqlForBash = EscapeBashSingleQuotes(existsCheckSql);
             var createDbSqlForBash = EscapeBashSingleQuotes(createDbSql);
