@@ -131,6 +131,7 @@ public sealed class OpenGaussContainer : DockerContainer, IDatabaseContainer
         properties.Add("Database", _configuration.Database ?? OpenGaussBuilder.InternalDatabase);
         properties.Add("Username", _configuration.Username ?? OpenGaussBuilder.DefaultUsername);
         properties.Add("Password", _configuration.Password ?? OpenGaussBuilder.DefaultPassword);
+        properties.Add("No Reset On Close", "true");
         return string.Join(";", properties.Select(property => string.Join("=", property.Key, property.Value)));
     }
 }
