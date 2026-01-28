@@ -20,6 +20,7 @@ public abstract class OpenGaussContainerTest
     public async Task ConnectionStateReturnsOpen()
     {
         await using DbConnection connection = _fixture.CreateConnection();
+        Assert.Contains("No Reset On Close=true", connection.ConnectionString);
         await connection.OpenAsync();
         Assert.Equal(ConnectionState.Open, connection.State);
 
@@ -103,7 +104,7 @@ public abstract class OpenGaussContainerTest
                 throw new InvalidOperationException($"{nameof(DbProviderFactory)} did not create a connection.");
             }
 
-            connection.ConnectionString = Container.GetConnectionString() + ";No Reset On Close=true;";
+            connection.ConnectionString = Container.GetConnectionString() ;
             return connection;
         }
     }
